@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
@@ -21,9 +22,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	request := []byte{}
-	_, err = conn.Read(request)
-	fmt.Printf(string(request))
+	reader := bufio.NewReader(conn)
+	request, err := reader.ReadString('\n')
 
 	if err != nil {
 		fmt.Println("Error reading HTTP request: ", err.Error())
@@ -40,7 +40,7 @@ func main() {
 		message = "OK"
 	} else {
 		status_code = "404"
-		message = "NOT FOUND"
+		message = "Not Found"
 	}
 
 	protocol := "HTTP/1.1"
@@ -51,5 +51,7 @@ func main() {
 		fmt.Println("Error sending HTTP status line: ", err.Error())
 		os.Exit(1)
 	}
+
+	conn.Close()
 
 }
