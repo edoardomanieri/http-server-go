@@ -23,6 +23,7 @@ func main() {
 
 	request := []byte{}
 	_, err = conn.Read(request)
+	fmt.Printf(string(request))
 
 	if err != nil {
 		fmt.Println("Error reading HTTP request: ", err.Error())
