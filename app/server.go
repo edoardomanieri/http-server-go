@@ -79,7 +79,7 @@ func generate_http_response(request HTTPRequest) HTTPResponse {
 	var status_code int
 	var message string
 
-	if request.url == "/" || strings.HasPrefix(request.url, "/echo/") {
+	if request.url == "/" || request.url == "/user-agent" || strings.HasPrefix(request.url, "/echo/") {
 		status_code = 200
 		message = "OK"
 	} else {
@@ -92,6 +92,8 @@ func generate_http_response(request HTTPRequest) HTTPResponse {
 	body := ""
 	if strings.HasPrefix(request.url, "/echo/") {
 		body, _ = strings.CutPrefix(request.url, "/echo/")
+	} else if request.url == "/user-agent" {
+		body = request.headers["User-Agent"]
 	}
 
 	headers := make(map[string]string)
