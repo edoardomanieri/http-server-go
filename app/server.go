@@ -32,7 +32,7 @@ func main() {
 		response = "HTTP/1.1 200 OK\r\n\r\n"
 	} else if path[:6] == "/echo/" {
 		echo := path[6:]
-		response = fmt.Sprintf("HTTP/1.1 200OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(echo), echo)
+		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(echo), echo)
 	} else {
 		response = "HTTP/1.1 404 Not Found\r\n\r\n"
 	}
