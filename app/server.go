@@ -103,6 +103,22 @@ func generate_http_response(request HTTPRequest) HTTPResponse {
 	return HTTPResponse{version, status_code, message, headers, body}
 }
 
+func handle_connection(conn net.Conn) {
+	reader := bufio.NewReader(conn)
+	request := parse_http_request(reader)
+	response := generate_http_response(request)
+	response_string := response.to_string()
+
+	_, err := conn.Write([]byte(response_string))
+
+	if err != nil {
+		fmt.Println("Error sending response string: ", err.Error())
+		os.Exit(1)
+	}
+
+	conn.Close()
+}
+
 func main() {
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
@@ -111,30 +127,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	conn, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+
+		go handle_connection(conn)
 	}
-
-	reader := bufio.NewReader(conn)
-	request := parse_http_request(reader)
-
-	if err != nil {
-		fmt.Println("Error reading HTTP request: ", err.Error())
-		os.Exit(1)
-	}
-
-	response := generate_http_response(request)
-	response_string := response.to_string()
-	_, err = conn.Write([]byte(response_string))
-	fmt.Printf("test: " + response_string)
-
-	if err != nil {
-		fmt.Println("Error sending response string: ", err.Error())
-		os.Exit(1)
-	}
-
-	conn.Close()
 
 }
