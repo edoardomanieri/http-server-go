@@ -1,45 +1,138 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
 	"strings"
 )
 
+const (
+	version = "HTTP/1.1"
+)
+
+type HTTPResponse struct {
+	version     string
+	status_code int
+	message     string
+	headers     map[string]string
+	body        string
+}
+
+type HTTPRequest struct {
+	method  string
+	url     string
+	version string
+	headers map[string]string
+	body    string
+}
+
+func (res HTTPResponse) to_string() string {
+	var builder strings.Builder
+	builder.WriteString(version)
+	builder.WriteString(" ")
+	builder.WriteString(fmt.Sprint(res.status_code))
+	builder.WriteString(" ")
+	builder.WriteString(res.message)
+	builder.WriteString("\r\n")
+
+	for header_name, header_value := range res.headers {
+		builder.WriteString(header_name)
+		builder.WriteString(": ")
+		builder.WriteString(header_value)
+		builder.WriteString("\r\n")
+	}
+	builder.WriteString("\r\n")
+
+	builder.WriteString(res.body)
+
+	return builder.String()
+}
+
+func parse_http_request(reader *bufio.Reader) HTTPRequest {
+	data := make([]byte, 4096)
+	_, err := reader.Read(data)
+
+	if err != nil {
+		fmt.Println("Error reading: ", err.Error())
+		os.Exit(1)
+	}
+	data_string := string(data)
+	data_split := strings.Split(data_string, "\r\n")
+	status_line_splits := strings.Split(data_split[0], " ")
+	method, url := status_line_splits[0], status_line_splits[1]
+
+	headers := make(map[string]string)
+
+	for i := 1; i < len(data_split)-2; i++ {
+		header := strings.SplitN(data_split[i], ":", 2)
+		if len(header) == 2 {
+			headers[strings.TrimSpace(header[0])] = strings.TrimSpace(header[1])
+		}
+	}
+	body := data_split[len(data_split)-1]
+	return HTTPRequest{method, url, version, headers, body}
+}
+
+func generate_http_response(request HTTPRequest) HTTPResponse {
+	var status_code int
+	var message string
+
+	if request.url == "/" || strings.HasPrefix(request.url, "/echo/") {
+		status_code = 200
+		message = "OK"
+	} else {
+		status_code = 404
+		message = "Not Found"
+	}
+
+	version := request.version
+
+	body := ""
+	if strings.HasPrefix(request.url, "/echo/") {
+		body, _ = strings.CutPrefix(request.url, "/echo/")
+	}
+
+	headers := make(map[string]string)
+	headers["Content-Type"] = "text/plain"
+	headers["Content-Length"] = fmt.Sprint(len(body))
+
+	return HTTPResponse{version, status_code, message, headers, body}
+}
+
 func main() {
-	fmt.Println("Logs from your program will appear here!")
+
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
 		fmt.Println("Failed to bind to port 4221")
 		os.Exit(1)
 	}
+
 	conn, err := l.Accept()
 	if err != nil {
 		fmt.Println("Error accepting connection: ", err.Error())
 		os.Exit(1)
 	}
-	data := make([]byte, 4096)
-	_, err = conn.Read(data)
+
+	reader := bufio.NewReader(conn)
+	request := parse_http_request(reader)
+
 	if err != nil {
-		fmt.Println("Error reading data: ", err.Error())
+		fmt.Println("Error reading HTTP request: ", err.Error())
 		os.Exit(1)
 	}
-	request_parts := strings.Split(string(data), "\r\n")
-	path := strings.Split(request_parts[0], " ")[1]
-	var response string
-	if path == "/" {
-		response = "HTTP/1.1 200 OK\r\n\r\n"
-	} else if path[:6] == "/echo/" {
-		echo := path[6:]
-		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(echo), echo)
-	} else {
-		response = "HTTP/1.1 404 Not Found\r\n\r\n"
-	}
-	_, err = conn.Write([]byte(response))
+
+	response := generate_http_response(request)
+	response_string := response.to_string()
+	_, err = conn.Write([]byte(response_string))
+	fmt.Printf("test: " + response_string)
+
 	if err != nil {
-		fmt.Println("Error writing data: ", err.Error())
+		fmt.Println("Error sending response string: ", err.Error())
 		os.Exit(1)
 	}
+
 	conn.Close()
+
 }
