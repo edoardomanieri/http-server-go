@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+const (
+	version = "HTTP/1.1"
+)
+
 type HTTPResponse struct {
 	version     string
 	status_code int
@@ -26,7 +30,7 @@ type HTTPRequest struct {
 
 func (res HTTPResponse) to_string() string {
 	var builder strings.Builder
-	builder.WriteString(res.version)
+	builder.WriteString(version)
 	builder.WriteString(" ")
 	builder.WriteString(fmt.Sprint(res.status_code))
 	builder.WriteString(" ")
@@ -42,19 +46,32 @@ func (res HTTPResponse) to_string() string {
 	builder.WriteString("\r\n")
 
 	builder.WriteString(res.body)
-	builder.WriteString("\r\n")
 
 	return builder.String()
 }
 
-func parse_http_request(scanner *bufio.Scanner) HTTPRequest {
-	scanner.Scan()
-	status_line_splits := strings.Split(scanner.Text(), " ")
-	method, url, version := status_line_splits[0], status_line_splits[1], status_line_splits[2]
+func parse_http_request(reader *bufio.Reader) HTTPRequest {
+	line, err := reader.ReadString('\r')
+	if err != nil {
+		fmt.Println("Error reading: ", err.Error())
+		os.Exit(1)
+	}
+	status_line_splits := strings.Split(line, " ")
+	method, url := strings.TrimSpace(status_line_splits[0]), strings.TrimSpace(status_line_splits[1])
 
 	headers := make(map[string]string)
-	for scanner.Scan() {
-		header := strings.SplitN(scanner.Text(), ":", 2)
+	for {
+		line, err := reader.ReadString('\n')
+
+		// Break if end of file
+		if err != nil {
+			if err.Error() != "EOF" {
+				fmt.Println(err)
+			}
+			break
+		}
+
+		header := strings.SplitN(line, ":", 2)
 		if len(header) == 2 {
 			headers[strings.TrimSpace(header[0])] = strings.TrimSpace(header[1])
 		}
@@ -104,8 +121,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	scanner := bufio.NewScanner(conn)
-	request := parse_http_request(scanner)
+	reader := bufio.NewReader(conn)
+	request := parse_http_request(reader)
 
 	if err != nil {
 		fmt.Println("Error reading HTTP request: ", err.Error())
@@ -114,10 +131,11 @@ func main() {
 
 	response := generate_http_response(request)
 	response_string := response.to_string()
+	fmt.Printf("test: " + response_string)
 	_, err = conn.Write([]byte(response_string))
 
 	if err != nil {
-		fmt.Println("Error sending HTTP status line: ", err.Error())
+		fmt.Println("Error sending response string: ", err.Error())
 		os.Exit(1)
 	}
 
