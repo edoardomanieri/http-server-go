@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -75,27 +76,11 @@ func parse_http_request(reader *bufio.Reader) HTTPRequest {
 	return HTTPRequest{method, url, version, headers, body}
 }
 
-func generate_http_response(request HTTPRequest) HTTPResponse {
-	var status_code int
-	var message string
-
-	if request.url == "/" || request.url == "/user-agent" || strings.HasPrefix(request.url, "/echo/") {
-		status_code = 200
-		message = "OK"
-	} else {
-		status_code = 404
-		message = "Not Found"
-	}
-
+func handle_echo_view(request HTTPRequest, args map[string]string) HTTPResponse {
+	status_code := 200
+	message := "OK"
+	body, _ := strings.CutPrefix(request.url, "/echo/")
 	version := request.version
-
-	body := ""
-	if strings.HasPrefix(request.url, "/echo/") {
-		body, _ = strings.CutPrefix(request.url, "/echo/")
-	} else if request.url == "/user-agent" {
-		body = request.headers["User-Agent"]
-	}
-
 	headers := make(map[string]string)
 	headers["Content-Type"] = "text/plain"
 	headers["Content-Length"] = fmt.Sprint(len(body))
@@ -103,10 +88,106 @@ func generate_http_response(request HTTPRequest) HTTPResponse {
 	return HTTPResponse{version, status_code, message, headers, body}
 }
 
-func handle_connection(conn net.Conn) {
+func handle_files_view(request HTTPRequest, args map[string]string) HTTPResponse {
+	status_code := 200
+	message := "OK"
+	body := ""
+	version := request.version
+	headers := make(map[string]string)
+	headers["Content-Type"] = "text/plain"
+	headers["Content-Length"] = fmt.Sprint(len(body))
+	directory := args["directory"]
+
+	basename, _ := strings.CutPrefix(request.url, "/files/")
+	filename := directory + basename
+
+	fmt.Printf("test %s\n", filename)
+
+	// Open the file
+	file, err := os.Open(filename)
+	if err != nil {
+		status_code = 404
+		message = "Not Found"
+		return HTTPResponse{version, status_code, message, headers, body}
+	}
+	defer file.Close()
+
+	// Create a new scanner for the file
+	scanner := bufio.NewScanner(file)
+
+	// Read and print the file line by line
+	for scanner.Scan() {
+		body += scanner.Text()
+	}
+
+	headers["Content-Type"] = "application/octet-stream"
+	headers["Content-Length"] = fmt.Sprint(len(body))
+
+	return HTTPResponse{version, status_code, message, headers, body}
+}
+
+func handle_base_view(request HTTPRequest, args map[string]string) HTTPResponse {
+	status_code := 200
+	message := "OK"
+	body := ""
+	version := request.version
+	headers := make(map[string]string)
+	headers["Content-Type"] = "text/plain"
+	headers["Content-Length"] = fmt.Sprint(len(body))
+
+	return HTTPResponse{version, status_code, message, headers, body}
+}
+
+func handle_user_agent_view(request HTTPRequest, args map[string]string) HTTPResponse {
+	status_code := 200
+	message := "OK"
+	body := request.headers["User-Agent"]
+	version := request.version
+	headers := make(map[string]string)
+	headers["Content-Type"] = "text/plain"
+	headers["Content-Length"] = fmt.Sprint(len(body))
+
+	return HTTPResponse{version, status_code, message, headers, body}
+}
+
+func generate_http_response(request HTTPRequest, args map[string]string) HTTPResponse {
+	handle_exact_request_map := map[string]func(HTTPRequest, map[string]string) HTTPResponse{
+		"/":           handle_base_view,
+		"/user-agent": handle_user_agent_view,
+	}
+
+	handle_prefix_request_map := map[string]func(HTTPRequest, map[string]string) HTTPResponse{
+		"/echo":  handle_echo_view,
+		"/files": handle_files_view,
+	}
+
+	for url, handle := range handle_exact_request_map {
+		if request.url == url {
+			return handle(request, args)
+		}
+	}
+
+	for prefix_url, handle := range handle_prefix_request_map {
+		if strings.HasPrefix(request.url, prefix_url) {
+			return handle(request, args)
+		}
+	}
+
+	status_code := 404
+	message := "Not Found"
+	version := request.version
+	body := ""
+	headers := make(map[string]string)
+	headers["Content-Type"] = "text/plain"
+	headers["Content-Length"] = fmt.Sprint(len(body))
+
+	return HTTPResponse{version, status_code, message, headers, body}
+}
+
+func handle_connection(conn net.Conn, args map[string]string) {
 	reader := bufio.NewReader(conn)
 	request := parse_http_request(reader)
-	response := generate_http_response(request)
+	response := generate_http_response(request, args)
 	response_string := response.to_string()
 
 	_, err := conn.Write([]byte(response_string))
@@ -120,6 +201,16 @@ func handle_connection(conn net.Conn) {
 }
 
 func main() {
+	var directory string
+	args := make(map[string]string)
+
+	// Define flags without setting default values
+	flag.StringVar(&directory, "directory", "", "directory to check if the file exist")
+
+	// Parse the flags
+	flag.Parse()
+
+	args["directory"] = directory
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
@@ -134,7 +225,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		go handle_connection(conn)
+		go handle_connection(conn, args)
 	}
 
 }
