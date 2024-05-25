@@ -53,13 +53,13 @@ func (res HTTPResponse) to_string() string {
 
 func parse_http_request(reader *bufio.Reader) HTTPRequest {
 	data := make([]byte, 4096)
-	_, err := reader.Read(data)
+	n, err := reader.Read(data)
 
 	if err != nil {
 		fmt.Println("Error reading: ", err.Error())
 		os.Exit(1)
 	}
-	data_string := string(data)
+	data_string := string(data[:n])
 	data_split := strings.Split(data_string, "\r\n")
 	status_line_splits := strings.Split(data_split[0], " ")
 	method, url := status_line_splits[0], status_line_splits[1]
@@ -72,7 +72,7 @@ func parse_http_request(reader *bufio.Reader) HTTPRequest {
 			headers[strings.TrimSpace(header[0])] = strings.TrimSpace(header[1])
 		}
 	}
-	body := data_split[len(data_split)-1]
+	body := strings.TrimSpace(data_split[len(data_split)-1])
 	return HTTPRequest{method, url, version, headers, body}
 }
 
@@ -91,8 +91,8 @@ func handle_echo_view(request HTTPRequest, args map[string]string) HTTPResponse 
 func handle_files_view(request HTTPRequest, args map[string]string) HTTPResponse {
 	status_code := 200
 	message := "OK"
-	body := ""
 	version := request.version
+	body := ""
 	headers := make(map[string]string)
 	headers["Content-Type"] = "text/plain"
 	headers["Content-Length"] = fmt.Sprint(len(body))
@@ -101,27 +101,45 @@ func handle_files_view(request HTTPRequest, args map[string]string) HTTPResponse
 	basename, _ := strings.CutPrefix(request.url, "/files/")
 	filename := directory + basename
 
-	fmt.Printf("test %s\n", filename)
+	if request.method == "GET" {
 
-	// Open the file
-	file, err := os.Open(filename)
-	if err != nil {
-		status_code = 404
-		message = "Not Found"
-		return HTTPResponse{version, status_code, message, headers, body}
+		// Open the file
+		file, err := os.Open(filename)
+		if err != nil {
+			status_code = 404
+			message = "Not Found"
+			return HTTPResponse{version, status_code, message, headers, body}
+		}
+
+		// Create a new scanner for the file
+		scanner := bufio.NewScanner(file)
+
+		// Read and print the file line by line
+		for scanner.Scan() {
+			body += scanner.Text()
+		}
+
+		headers["Content-Type"] = "application/octet-stream"
+		headers["Content-Length"] = fmt.Sprint(len(body))
+
+		file.Close()
+
+	} else if request.method == "POST" {
+
+		// Create the file
+		file, err := os.Create(filename)
+		if err != nil {
+			fmt.Println("Error creating file: ", err.Error())
+			os.Exit(1)
+		}
+
+		// Write some content to the file
+		_, err = file.Write([]byte(request.body))
+		status_code = 201
+		message = "Created"
+
+		file.Close()
 	}
-	defer file.Close()
-
-	// Create a new scanner for the file
-	scanner := bufio.NewScanner(file)
-
-	// Read and print the file line by line
-	for scanner.Scan() {
-		body += scanner.Text()
-	}
-
-	headers["Content-Type"] = "application/octet-stream"
-	headers["Content-Length"] = fmt.Sprint(len(body))
 
 	return HTTPResponse{version, status_code, message, headers, body}
 }
